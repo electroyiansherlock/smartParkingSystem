@@ -20,6 +20,8 @@ the response will definitely be there.
 Like fetch() method returns a promise so .then() will be used when the 200 http status code is there
 and if any error is there then .catch() will be used.
 
+### Why do we have to make API calls as Async
+
 If we are not using the await in the async calls then the function will not be able to understand where it has to wait for the response, as the API calls to other services has some network latency to fetch the data from the different servers.
 If we are not making the API calls as async calls then that will make the JS application UX very bad because JS is a single threaded application and if we are blocking the main thread in the API calls then all the user interactions, and other
 features will be blocked till the response from the API is not there.
