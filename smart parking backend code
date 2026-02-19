@@ -1,0 +1,338 @@
+
+Database:
+
+@Entity
+@Table(name = "slots")
+@Data
+public class Slot {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private boolean occupied;
+}
+
+
+public enum BookingStatus {
+    ACTIVE,
+    COMPLETED
+}
+
+
+@Entity
+@Table(name = "bookings")
+@Data
+public class Booking {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long bookingId;
+
+    private Long slotId;
+    private String vehicleNumber;
+    private LocalDateTime entryTime;
+    private LocalDateTime exitTime;
+
+    @Enumerated(EnumType.STRING)
+    private BookingStatus status;
+}
+
+
+@Repository
+public interface SlotRepository extends JpaRepository<Slot, Long> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Slot> findFirstByOccupiedFalse();
+
+    int countByOccupiedTrue();
+}
+
+
+
+Repository:
+
+
+@Repository
+public interface BookingRepository extends JpaRepository<Booking, Long> {
+
+    Optional<Booking> findByBookingIdAndStatus(
+        Long bookingId,
+        BookingStatus status
+    );
+}
+
+
+
+DTO:
+
+@Data
+public class CreateBookingRequest {
+    private String vehicleNumber;
+}
+
+@Data
+@AllArgsConstructor
+public class CreateBookingResponse {
+    private Long bookingId;
+    private Long slotId;
+}
+
+
+@Data
+@AllArgsConstructor
+public class ExitBookingResponse {
+    private long durationInMinutes;
+    private int payment;
+}
+
+
+Service :
+
+@Service
+public class BookingService {
+
+    private final SlotRepository slotRepository;
+    private final BookingRepository bookingRepository;
+
+    public BookingService(
+        SlotRepository slotRepository,
+        BookingRepository bookingRepository
+    ) {
+        this.slotRepository = slotRepository;
+        this.bookingRepository = bookingRepository;
+    }
+
+    @Transactional
+    public CreateBookingResponse createBooking(String vehicleNumber) {
+
+        Slot slot = slotRepository.findFirstByOccupiedFalse()
+            .orElseThrow(() ->
+                new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "No slots available"
+                )
+            );
+
+        slot.setOccupied(true);
+        slotRepository.save(slot);
+
+        Booking booking = new Booking();
+        booking.setSlotId(slot.getId());
+        booking.setVehicleNumber(vehicleNumber);
+        booking.setEntryTime(LocalDateTime.now());
+        booking.setStatus(BookingStatus.ACTIVE);
+
+        bookingRepository.save(booking);
+
+        return new CreateBookingResponse(
+            booking.getBookingId(),
+            slot.getId()
+        );
+    }
+
+    @Transactional
+    public ExitBookingResponse exitBooking(Long bookingId) {
+
+        Booking booking = bookingRepository
+            .findByBookingIdAndStatus(bookingId, BookingStatus.ACTIVE)
+            .orElseThrow(() ->
+                new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Active booking not found"
+                )
+            );
+
+        booking.setExitTime(LocalDateTime.now());
+        booking.setStatus(BookingStatus.COMPLETED);
+
+        long minutes = Duration.between(
+            booking.getEntryTime(),
+            booking.getExitTime()
+        ).toMinutes();
+
+        int payment = (int) Math.max(20, minutes * 20);
+
+        bookingRepository.save(booking);
+
+        Slot slot = slotRepository.findById(booking.getSlotId()).orElseThrow();
+        slot.setOccupied(false);
+        slotRepository.save(slot);
+
+        return new ExitBookingResponse(minutes, payment);
+    }
+
+    public int availableSlots(int totalSlots) {
+        return totalSlots - slotRepository.countByOccupiedTrue();
+    }
+}
+
+
+Controller:
+
+@RestController
+@RequestMapping("/api")
+@CrossOrigin(origins = "http://localhost:5173")
+public class ParkingController {
+
+    private final BookingService bookingService;
+
+    public ParkingController(BookingService bookingService) {
+        this.bookingService = bookingService;
+    }
+
+    @GetMapping("/slots/availability")
+    public int availability() {
+        return bookingService.availableSlots(12);
+    }
+
+    @PostMapping("/bookings")
+    public CreateBookingResponse createBooking(
+        @RequestBody CreateBookingRequest request
+    ) {
+        return bookingService.createBooking(request.getVehicleNumber());
+    }
+
+    @PostMapping("/bookings/{bookingId}/exit")
+    public ExitBookingResponse exitParking(
+        @PathVariable Long bookingId
+    ) {
+        return bookingService.exitBooking(bookingId);
+    }
+}
+
+
+
+FrontEnd code:
+
+
+
+ParkingApi.ts :
+
+
+
+import axios from "axios";
+
+const API = "http://localhost:8092/api";
+
+export const getAvailability = () =>
+  axios.get<number>(`${API}/slots/availability`);
+
+export const createBooking = (vehicleNumber: string) =>
+  axios.post(`${API}/bookings`, { vehicleNumber });
+
+export const exitBooking = (bookingId: number) =>
+  axios.post(`${API}/bookings/${bookingId}/exit`);
+
+
+
+
+CarParking.tsx :
+
+
+
+import { useState } from "react";
+import {
+  getAvailability,
+  createBooking,
+  exitBooking
+} from "../api/parkingApi";
+
+function CarParking() {
+
+  const [vehicleNumber, setVehicleNumber] = useState("");
+  const [available, setAvailable] = useState(0);
+  const [bookingId, setBookingId] = useState<number | null>(null);
+  const [payment, setPayment] = useState<number | null>(null);
+
+  const checkAvailability = async () => {
+    const res = await getAvailability();
+    setAvailable(res.data);
+  };
+
+  const bookSlot = async () => {
+    const res = await createBooking(vehicleNumber);
+    setBookingId(res.data.bookingId);
+  };
+
+  const exit = async () => {
+    if (!bookingId) return;
+    const res = await exitBooking(bookingId);
+    setPayment(res.data.payment);
+  };
+
+  return (
+    <>
+      <h2>Smart Parking System</h2>
+
+      <button onClick={checkAvailability}>
+        Check Availability
+      </button>
+
+      <p>Available Slots: {available}</p>
+
+      <input
+        value={vehicleNumber}
+        onChange={(e) => setVehicleNumber(e.target.value)}
+        placeholder="Vehicle Number"
+      />
+
+      <button onClick={bookSlot} disabled={available <= 0}>
+        Book Slot
+      </button>
+
+      {bookingId && (
+        <>
+          <p>Booking ID: {bookingId}</p>
+          <button onClick={exit}>Exit Parking</button>
+        </>
+      )}
+
+      {payment !== null && (
+        <p>Payment to pay: ₹{payment}</p>
+      )}
+    </>
+  );
+}
+
+export default CarParking;
+
+
+
+
+// Old way with .then()
+function fetchDataWithThen() {
+  fetch('https://api.example.com/data')
+    .then(response => response.json())
+    .then(data => console.log(data))
+    .catch(error => console.error(error));
+}
+
+// New way with async/await
+async function fetchDataWithAsyncAwait() {
+  try {
+    const response = await fetch('https://api.example.com/data');
+    const data = await response.json();
+    console.log(data);
+  } catch (error) {
+    console.error(error); // Catches any errors in the try block
+  }
+}
+
+
+Meaning of a Promise in JavaScript
+A Promise is a JavaScript object that links producing code and consuming code [1]. 
+"Producing code" is code that does something and takes time (like fetching data from a server).
+"Consuming code" is code that wants the result of the "producing code" once it's available. 
+A promise can be in one of three states:
+Pending: The initial state, neither fulfilled nor rejected.
+Fulfilled: The operation completed successfully, and a value is available (e.g., the data from a server request).
+Rejected: The operation failed, and an error reason is available. 
+You can attach callbacks to a promise to handle the fulfilled value (.then()) or the rejection reason (.catch()) [1]. 
+
+A Promise basically represents the eventual completion of an async operation, It represents that the
+asynchronous call which you are making will be either completed successfully or will be failed, but
+the response will definitely be there.
+
+Like fetch() method returns a promise so .then() will be used when the 200 http status code is there
+and if any error is there then .catch() will be used.
