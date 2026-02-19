@@ -1,0 +1,117 @@
+
+
+FrontEnd code:
+
+
+
+ParkingApi.ts :
+
+
+
+import axios from "axios";
+
+const API = "http://localhost:8092/api";
+
+export const getAvailability = () =>
+  axios.get<number>(`${API}/slots/availability`);
+
+export const createBooking = (vehicleNumber: string) =>
+  axios.post(`${API}/bookings`, { vehicleNumber });
+
+export const exitBooking = (bookingId: number) =>
+  axios.post(`${API}/bookings/${bookingId}/exit`);
+
+
+
+
+CarParking.tsx :
+
+
+
+import { useState } from "react";
+import {
+  getAvailability,
+  createBooking,
+  exitBooking
+} from "../api/parkingApi";
+
+function CarParking() {
+
+  const [vehicleNumber, setVehicleNumber] = useState("");
+  const [available, setAvailable] = useState(0);
+  const [bookingId, setBookingId] = useState<number | null>(null);
+  const [payment, setPayment] = useState<number | null>(null);
+
+  const checkAvailability = async () => {
+    const res = await getAvailability();
+    setAvailable(res.data);
+  };
+
+  const bookSlot = async () => {
+    const res = await createBooking(vehicleNumber);
+    setBookingId(res.data.bookingId);
+  };
+
+  const exit = async () => {
+    if (!bookingId) return;
+    const res = await exitBooking(bookingId);
+    setPayment(res.data.payment);
+  };
+
+  return (
+    <>
+      <h2>Smart Parking System</h2>
+
+      <button onClick={checkAvailability}>
+        Check Availability
+      </button>
+
+      <p>Available Slots: {available}</p>
+
+      <input
+        value={vehicleNumber}
+        onChange={(e) => setVehicleNumber(e.target.value)}
+        placeholder="Vehicle Number"
+      />
+
+      <button onClick={bookSlot} disabled={available <= 0}>
+        Book Slot
+      </button>
+
+      {bookingId && (
+        <>
+          <p>Booking ID: {bookingId}</p>
+          <button onClick={exit}>Exit Parking</button>
+        </>
+      )}
+
+      {payment !== null && (
+        <p>Payment to pay: ₹{payment}</p>
+      )}
+    </>
+  );
+}
+
+export default CarParking;
+
+
+
+
+// Old way with .then()
+function fetchDataWithThen() {
+  fetch('https://api.example.com/data')
+    .then(response => response.json())
+    .then(data => console.log(data))
+    .catch(error => console.error(error));
+}
+
+// New way with async/await
+async function fetchDataWithAsyncAwait() {
+  try {
+    const response = await fetch('https://api.example.com/data');
+    const data = await response.json();
+    console.log(data);
+  } catch (error) {
+    console.error(error); // Catches any errors in the try block
+  }
+}
