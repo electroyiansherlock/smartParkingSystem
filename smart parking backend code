@@ -319,20 +319,3 @@ async function fetchDataWithAsyncAwait() {
   }
 }
 
-
-Meaning of a Promise in JavaScript
-A Promise is a JavaScript object that links producing code and consuming code [1]. 
-"Producing code" is code that does something and takes time (like fetching data from a server).
-"Consuming code" is code that wants the result of the "producing code" once it's available. 
-A promise can be in one of three states:
-Pending: The initial state, neither fulfilled nor rejected.
-Fulfilled: The operation completed successfully, and a value is available (e.g., the data from a server request).
-Rejected: The operation failed, and an error reason is available. 
-You can attach callbacks to a promise to handle the fulfilled value (.then()) or the rejection reason (.catch()) [1]. 
-
-A Promise basically represents the eventual completion of an async operation, It represents that the
-asynchronous call which you are making will be either completed successfully or will be failed, but
-the response will definitely be there.
-
-Like fetch() method returns a promise so .then() will be used when the 200 http status code is there
-and if any error is there then .catch() will be used.
